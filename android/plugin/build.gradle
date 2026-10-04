@@ -1,0 +1,86 @@
+apply plugin: 'com.android.library'
+
+def buildDirectory = getLayout().getBuildDirectory().asFile.get()
+
+// plugin.signin на Android — чистая Java (Credential Manager), без нативной
+// библиотеки: C++ и CMake шаблона ему не нужны.
+
+android {
+    compileSdk 35
+    defaultConfig {
+        namespace "plugin.signin" // Имя пакета плагина
+
+        minSdkVersion 21
+        consumerProguardFiles "proguard-rules.pro"
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+}
+
+dependencies {
+    implementation ':Corona@aar'
+
+    // Те же зависимости приложение получает из corona.gradle в архиве плагина
+    // (сборщик Solar2D применяет его сам) — версии держать одинаковыми.
+    implementation "androidx.credentials:credentials:1.3.0"
+    implementation "androidx.credentials:credentials-play-services-auth:1.3.0"
+    implementation "com.google.android.libraries.identity.googleid:googleid:1.1.1"
+    // androidx.core — ЯВНО: credentials-play-services-auth вырезает его из-под
+    // play-services-auth (exclude androidx.core:*), рассчитывая, что в
+    // приложении он и так есть (обычно приходит с appcompat). В приложении
+    // Solar2D его нет, и без этой строки первый же вход падает:
+    // NoClassDefFoundError androidx.core.app.ComponentActivity в
+    // GoogleApiAvailability.getInstance.
+    implementation "androidx.core:core:1.8.0"
+}
+
+tasks.register("extractPluginJar") {
+    group "Solar2Dev"
+    dependsOn assembleRelease
+    doLast {
+        copy {
+            from {
+                zipTree("$buildDirectory/outputs/aar/${project.name}-release.aar").matching {
+                    include 'classes.jar'
+                }.singleFile
+            }
+            into "$buildDirectory/outputs/"
+            String packageName = android.namespace
+            rename "classes.jar", "${packageName}.jar"
+        }
+    }
+}
+
+// This creates archive for plugin so it can be used by Simulator from build.settings
+// by deploying it directly to Solar2DPlugins directory. This is first in line location
+// to retrieve plugins, so will overshadow online directory/store downloads.
+def providerId = 'ovh.azi'
+tasks.register("deployToLocalSolar2DRepo", Tar) {
+    group "Solar2Dev"
+
+    dependsOn assembleRelease
+
+    String packageName = android.namespace
+
+    compression = Compression.GZIP
+    archiveFileName = "data.tgz"
+    // На Windows плагины Solar2D лежат в %APPDATA%, на macOS — в домашнем каталоге
+    def rootS2DP = System.getenv("APPDATA") ?: System.getProperty("user.home")
+    def dst = file("$rootS2DP/Solar2DPlugins/$providerId/$packageName/android")
+    destinationDirectory = dst
+
+    into("/") {
+        from("$buildDirectory/outputs/aar")
+        include("${project.name}-release.aar")
+    }
+    // Зависимости Credential Manager приложение получает из этого файла
+    into("/") {
+        from("$rootDir")
+        include("corona.gradle")
+    }
+    doLast {
+        println("\n\n\n== !!! IMPORTANT !!! ==\nMake sure to delete plugin when done: $dst\nThis plugin will override any Solar2Directory plugin, or plugin from any other source")
+    }
+}

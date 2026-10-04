@@ -1,0 +1,14 @@
+// Зависимости plugin.signin для приложения: сборщик Solar2D (Android) применяет
+// corona.gradle из архива плагина сам. Версии — те же, что в plugin/build.gradle.
+dependencies {
+    implementation "androidx.credentials:credentials:1.3.0"
+    implementation "androidx.credentials:credentials-play-services-auth:1.3.0"
+    implementation "com.google.android.libraries.identity.googleid:googleid:1.1.1"
+    // androidx.core — ЯВНО: credentials-play-services-auth вырезает его из-под
+    // play-services-auth (exclude androidx.core:*), рассчитывая, что в
+    // приложении он и так есть (обычно приходит с appcompat). В приложении
+    // Solar2D его нет, и без этой строки первый же вход падает:
+    // NoClassDefFoundError androidx.core.app.ComponentActivity в
+    // GoogleApiAvailability.getInstance.
+    implementation "androidx.core:core:1.8.0"
+}

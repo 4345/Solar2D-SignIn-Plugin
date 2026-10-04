@@ -1,0 +1,35 @@
+# Windows: промежуточные файлы и результат Visual Studio
+win32/Plugin/
+win32/Release/
+win32/Debug/
+win32/.vs/
+*.vcxproj.user
+
+# Android: Gradle, CMake, сборки приложения и плагина
+android/.gradle/
+android/build/
+android/app/build/
+android/plugin/build/
+android/plugin/.cxx/
+android/local.properties
+android/**/.idea/
+*.iml
+
+# Apple: промежуточные сборки Xcode и готовые библиотеки
+ios/build/
+ios/BuiltPlugin/
+mac/build/
+mac/plugin_*.dylib
+xcuserdata/
+*.xcuserstate
+.DS_Store
+
+# Rust-ядро, если есть
+target/
+
+# Python
+__pycache__/
+
+# Рабочие записки сборки на Mac: в них данные устройства и аккаунта разработчика
+OTCHET_MAC.md
+ZADANIE_DLYA_MAC.md

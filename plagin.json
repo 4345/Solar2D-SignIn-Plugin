@@ -1,0 +1,57 @@
+{
+  "imya": "signin",
+  "izdatel": "ovh.azi",
+  "repo": "4345/Solar2D-SignIn-Plugin",
+  "vetka": "main",
+  "markery": [],
+  "istochniki": {
+    "android": [
+      [
+        "plugin-release.aar",
+        "android/plugin/build/outputs/aar/plugin-release.aar",
+        "644"
+      ],
+      [
+        "corona.gradle",
+        "android/corona.gradle",
+        "644"
+      ]
+    ],
+    "win32": [
+      [
+        "plugin_signin.lua",
+        "shared/plugin_signin.lua",
+        "644"
+      ]
+    ],
+    "win32-sim": [
+      [
+        "plugin_signin.lua",
+        "shared/plugin_signin.lua",
+        "644"
+      ]
+    ],
+    "macOS": [
+      [
+        "plugin_signin.lua",
+        "shared/plugin_signin.lua",
+        "644"
+      ]
+    ],
+    "mac-sim": [
+      [
+        "plugin_signin.lua",
+        "shared/plugin_signin.lua",
+        "644"
+      ]
+    ],
+    "lua": [
+      [
+        "plugin_signin.lua",
+        "shared/plugin_signin.lua",
+        "644"
+      ]
+    ]
+  },
+  "java": true
+}
