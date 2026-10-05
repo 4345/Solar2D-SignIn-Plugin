@@ -78,7 +78,7 @@ say( "=== Тест plugin.signin ===" )
 -- [1] Загрузка
 say( "[1] Загрузка" )
 check( type( plagin ) == "table", "require вернул таблицу" )
-check( type( plagin.version ) == "function" and plagin.version() == "1.0.0",
+check( type( plagin.version ) == "function" and plagin.version() == "1.1.0",
 	"version() = " .. tostring( plagin.version and plagin.version() ) )
 local dostupno = plagin.isAvailable()
 check( type( dostupno ) == "table" and type( dostupno.google ) == "boolean" and type( dostupno.apple ) == "boolean",

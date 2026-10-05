@@ -13,7 +13,7 @@ local Library = require "CoronaLibrary"
 
 local lib = Library:new{ name = 'plugin.signin', publisherId = 'ovh.azi' }
 
-local VERSION = "1.0.0"
+local VERSION = "1.1.0"
 
 local function etoSlushatel( listener )
 	local t = type( listener )

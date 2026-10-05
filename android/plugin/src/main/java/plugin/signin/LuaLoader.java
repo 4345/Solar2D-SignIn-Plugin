@@ -41,19 +41,33 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * само проверяет его на своём сервере.
  *
  * Lua API:
- *   signin.version()                         -> "1.0.0"
+ *   signin.version()                         -> "1.1.0"
  *   signin.isAvailable()                     -> { google = true, apple = false }
  *   signin.google(options, listener)         -> true | nil, сообщение
  *       options.serverClientId (строка, обязательно) — веб-клиент OAuth
  *       options.silent (логическое) — только уже разрешённые этому приложению
  *           аккаунты, без окна выбора; нет такого — ошибка noCredential
+ *       options.button (логическое) — сразу полноэкранный выбор аккаунта
+ *           (кнопка «Sign in with Google»), минуя шторку
  *       options.nonce (строка) — попадёт в ID-токен
  *   signin.apple(options, listener)          -> nil, "unsupported"
  *   signin.signOut([listener])               -> сбросить выбор аккаунта
  *
+ * Без silent и button вход открывает ШТОРКУ Credential Manager со всеми
+ * Google-аккаунтами устройства. Согласие на передачу имени, почты и фото
+ * приложению Google показывает в ней же, строкой под аккаунтами, — игрок
+ * делает одно касание. Полноэкранный выбор (button) показывает согласие
+ * отдельной страницей после выбора аккаунта. Шторке нечего показать (на
+ * устройстве нет Google-аккаунта, или все требуют повторного входа) — вход сам
+ * переходит на полноэкранный выбор: тот умеет и добавить аккаунт, и войти
+ * заново. Совсем без согласия первого входа нельзя: его показывает Google, а
+ * не приложение.
+ *
  * Событие слушателя: name = "signin", provider = "google", isError;
- *   при успехе idToken; при ошибке errorType ("cancelled", "noCredential",
- *   "interrupted", "failed") и errorMessage. После signOut: isSignOut = true.
+ *   при успехе idToken, а также displayName и profilePictureUri, если Google
+ *   их передал (те же имя и фото есть в самом ID-токене — name, picture);
+ *   при ошибке errorType ("cancelled", "noCredential", "interrupted",
+ *   "failed") и errorMessage. После signOut: isSignOut = true.
  *
  * Слушатель зовётся в потоке Lua (CoronaRuntimeTaskDispatcher), а не в
  * потоке ответа системы. Одновременно идёт один вход: второй, пока первый в
@@ -61,7 +75,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public class LuaLoader implements JavaFunction {
 
-    static final String VERSION = "1.0.0";
+    static final String VERSION = "1.1.0";
+
+    // Как открывается вход (см. описание класса).
+    private static final int TIHO = 0;    // silent: только разрешённые аккаунты, без окна
+    private static final int SHTORKA = 1; // шторка со всеми аккаунтами и согласием в ней
+    private static final int KNOPKA = 2;  // полноэкранный выбор, согласие — отдельной страницей
     static final String SOBYTIE = "signin";
 
     private static final AtomicBoolean idyot = new AtomicBoolean(false);
@@ -105,6 +124,12 @@ public class LuaLoader implements JavaFunction {
     private static void otvetit(CoronaRuntimeTaskDispatcher dispetcher, final int ssylka,
                                 final String token, final String tipOshibki, final String tekstOshibki,
                                 final boolean vyhod) {
+        otvetit(dispetcher, ssylka, token, tipOshibki, tekstOshibki, vyhod, null, null);
+    }
+
+    private static void otvetit(CoronaRuntimeTaskDispatcher dispetcher, final int ssylka,
+                                final String token, final String tipOshibki, final String tekstOshibki,
+                                final boolean vyhod, final String imya, final String foto) {
         dispetcher.send(new CoronaRuntimeTask() {
             @Override
             public void executeUsing(CoronaRuntime runtime) {
@@ -122,6 +147,14 @@ public class LuaLoader implements JavaFunction {
                     if (token != null) {
                         L.pushString(token);
                         L.setField(-2, "idToken");
+                    }
+                    if (imya != null) {
+                        L.pushString(imya);
+                        L.setField(-2, "displayName");
+                    }
+                    if (foto != null) {
+                        L.pushString(foto);
+                        L.setField(-2, "profilePictureUri");
                     }
                     if (tipOshibki != null) {
                         L.pushString(tipOshibki);
@@ -181,6 +214,8 @@ public class LuaLoader implements JavaFunction {
             }
             final String klient = strokaPolya(L, 1, "serverClientId");
             final boolean tikho = logikaPolya(L, 1, "silent");
+            final boolean knopka = logikaPolya(L, 1, "button");
+            final int rezhim = tikho ? TIHO : (knopka ? KNOPKA : SHTORKA);
             final String nonce = strokaPolya(L, 1, "nonce");
             if (klient == null || klient.isEmpty()) {
                 L.pushNil();
@@ -203,7 +238,7 @@ public class LuaLoader implements JavaFunction {
 
             activity.runOnUiThread(() -> {
                 try {
-                    nachat(activity, klient, tikho, nonce, dispetcher, ssylka);
+                    nachat(activity, klient, rezhim, nonce, dispetcher, ssylka);
                 } catch (Throwable t) {
                     idyot.set(false);
                     otvetit(dispetcher, ssylka, null, "failed", t.toString(), false);
@@ -213,21 +248,22 @@ public class LuaLoader implements JavaFunction {
             return 1;
         }
 
-        private void nachat(Activity activity, String klient, boolean tikho, String nonce,
-                            CoronaRuntimeTaskDispatcher dispetcher, int ssylka) {
+        private void nachat(final Activity activity, final String klient, final int rezhim, final String nonce,
+                            final CoronaRuntimeTaskDispatcher dispetcher, final int ssylka) {
             GetCredentialRequest.Builder zapros = new GetCredentialRequest.Builder();
-            if (tikho) {
-                // Повторный вход без окна: только аккаунты, уже разрешённые этому
-                // приложению, и автовыбор, если такой один.
-                GetGoogleIdOption.Builder b = new GetGoogleIdOption.Builder()
-                    .setServerClientId(klient)
-                    .setFilterByAuthorizedAccounts(true)
-                    .setAutoSelectEnabled(true);
+            if (rezhim == KNOPKA) {
+                // Полноэкранный выбор любого аккаунта устройства (и добавление нового).
+                GetSignInWithGoogleOption.Builder b = new GetSignInWithGoogleOption.Builder(klient);
                 if (nonce != null) b.setNonce(nonce);
                 zapros.addCredentialOption(b.build());
             } else {
-                // Кнопка «Войти через Google»: окно выбора любого аккаунта устройства.
-                GetSignInWithGoogleOption.Builder b = new GetSignInWithGoogleOption.Builder(klient);
+                // TIHO — повторный вход без окна: только аккаунты, уже разрешённые
+                // этому приложению, и автовыбор, если такой один. SHTORKA — шторка со
+                // всеми аккаунтами устройства, без автовыбора: игрок выбирает сам.
+                GetGoogleIdOption.Builder b = new GetGoogleIdOption.Builder()
+                    .setServerClientId(klient)
+                    .setFilterByAuthorizedAccounts(rezhim == TIHO)
+                    .setAutoSelectEnabled(rezhim == TIHO);
                 if (nonce != null) b.setNonce(nonce);
                 zapros.addCredentialOption(b.build());
             }
@@ -242,8 +278,9 @@ public class LuaLoader implements JavaFunction {
                         if (c instanceof CustomCredential
                                 && GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL.equals(c.getType())) {
                             try {
-                                String token = GoogleIdTokenCredential.createFrom(c.getData()).getIdToken();
-                                otvetit(dispetcher, ssylka, token, null, null, false);
+                                GoogleIdTokenCredential g = GoogleIdTokenCredential.createFrom(c.getData());
+                                String foto = g.getProfilePictureUri() != null ? g.getProfilePictureUri().toString() : null;
+                                otvetit(dispetcher, ssylka, g.getIdToken(), null, null, false, g.getDisplayName(), foto);
                             } catch (Exception e) {
                                 otvetit(dispetcher, ssylka, null, "failed", "token parse: " + e, false);
                             }
@@ -254,6 +291,18 @@ public class LuaLoader implements JavaFunction {
 
                     @Override
                     public void onError(GetCredentialException e) {
+                        if (rezhim == SHTORKA && e instanceof NoCredentialException) {
+                            // Шторке нечего показать: Google-аккаунта на устройстве нет
+                            // или все требуют повторного входа. Полноэкранный выбор умеет
+                            // и то, и другое. Вход ещё идёт — idyot не снимаем.
+                            try {
+                                nachat(activity, klient, KNOPKA, nonce, dispetcher, ssylka);
+                            } catch (Throwable t) {
+                                idyot.set(false);
+                                otvetit(dispetcher, ssylka, null, "failed", t.toString(), false);
+                            }
+                            return;
+                        }
                         idyot.set(false);
                         String tip = "failed";
                         if (e instanceof GetCredentialCancellationException) {
