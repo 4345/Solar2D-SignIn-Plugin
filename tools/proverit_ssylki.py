@@ -22,11 +22,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from plagin_konfig import PLATFORMY, Plagin, najti_koren, nastroit_vyvod  # noqa: E402
 
 
+def svoi_platformy(pl: Plagin) -> list[str]:
+    """Платформы, которые плагин выпускает: при своих istochniki в plagin.json — только они
+    (у плагина без iOS ссылки iphone нет, и проверять её незачем)."""
+    est = pl.istochniki()
+    return [p for p in PLATFORMY if p in est]
+
+
 def nastrojki(pl: Plagin, baza: str | None) -> str:
     """Блок plugins для build.settings приложения: ссылка на каждую платформу."""
     out = ["plugins =", "{", f'\t["{pl.modul}"] =', "\t{", f'\t\tpublisherId = "{pl.izdatel}",',
            "\t\tsupportedPlatforms =", "\t\t{"]
-    for p in PLATFORMY:
+    for p in svoi_platformy(pl):
         url = f"{baza}/{p}/data.tgz" if baza else pl.ssylka(p)
         key = p if p.isidentifier() else f'["{p}"]'
         out.append(f'\t\t\t{key} = {{ url = "{url}" }},')
@@ -51,7 +58,7 @@ def main() -> int:
     bad = 0
     readme = next((pl.put(n) for n in ("ReadMe.md", "README.md") if pl.put(n).exists()), None)
     text = readme.read_text(encoding="utf-8") if readme else ""
-    for p in PLATFORMY:
+    for p in svoi_platformy(pl):
         url = pl.ssylka(p)
         if readme and url not in text:
             print(f"{p:11} нет в {readme.name}: {url}")
