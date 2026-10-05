@@ -13,7 +13,10 @@
      (ochistit_kesh.py): с записью в catalog.json Simulator берёт ПЕРВУЮ распакованную
      сборку и свежую из Solar2DPlugins не видит — тест «проходит» на старой DLL
      (проверено мутантом 04.10.2026). --bez-ochistki — не трогать;
-  3. запускает проект;
+  3. запускает проект — на Windows БЕЗ прав администратора (__COMPAT_LAYER=RunAsInvoker):
+     Simulator с повышением ждёт подтверждения UAC, а человека у монитора может не быть, и
+     прогон встаёт; кроме того, окном процесса с повышенными правами обычный процесс не
+     управляет вовсе (UIPI: ни кликов, ни клавиш, ни даже закрытия);
   4. ждёт отчёт, более свежий, чем запуск, в песочнице Simulator:
        Windows: %LOCALAPPDATA%\\Corona Labs\\Corona Simulator\\Sandbox\\<имя проекта>-<хэш>\\Documents\\
        macOS:   ~/Library/Application Support/Corona Simulator/<имя проекта>-<хэш>/Documents/
@@ -57,12 +60,31 @@ def simulyator(arch: str | None = None) -> list[str]:
     return ["open", "-n", "-a", str(apps[-1]), *(["--arch", arch] if arch else []), "--args"]
 
 
-def zakryt_simulyator() -> None:
+def zakryt_simulyator() -> bool:
+    """False — Simulator остался жив: на Windows это Simulator, запущенный с правами
+    администратора, — обычный процесс его не закроет (taskkill: «Отказано в доступе»)."""
     if WIN:
         subprocess.run(["taskkill", "/F", "/IM", "Corona Simulator.exe"], capture_output=True)
     else:
         subprocess.run(["pkill", "-x", "Corona Simulator"], capture_output=True)
     time.sleep(1.0)
+    return not zhiv()
+
+
+def zapustit_bez_povysheniya(exe: str, main_lua: Path) -> None:
+    """Windows: Simulator обычным процессом. У Corona Simulator.exe бывает флаг совместимости
+    RUNASADMIN (HKCU\\...\\AppCompatFlags\\Layers): тогда CreateProcess отвечает WinError 740,
+    а ShellExecute (os.startfile, Start-Process) поднимает окно UAC. __COMPAT_LAYER=RunAsInvoker
+    в окружении снимает требование только для этого запуска — настройки системы не меняются.
+    Права администратора Simulator для прогона тестов не нужны.
+
+    HOME из окружения убирается: его задают Git Bash и MSYS, и Simulator с HOME ищет локальные
+    плагины в %USERPROFILE%\\Solar2DPlugins вместо %APPDATA%\\Solar2DPlugins — «Unable to find
+    plugin», хотя архив на месте (04.10.2026). Запуск с повышением прав этого не показывал:
+    процесс получал свежее окружение от Windows, без HOME."""
+    env = {k: v for k, v in os.environ.items() if k.upper() != "HOME"}
+    env["__COMPAT_LAYER"] = "RunAsInvoker"
+    subprocess.Popen([exe, str(main_lua)], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def zhiv() -> bool:
@@ -141,15 +163,15 @@ def main() -> int:
     koren = next((d for d in [proekt, *proekt.parents] if (d / "plagin.json").is_file()), None)
     pl = Plagin(koren) if koren else None
 
-    zakryt_simulyator()
+    if not zakryt_simulyator():
+        sys.exit("Simulator не закрывается: он запущен с правами администратора, а обычный процесс такой "
+                 "закрыть не может. Закройте его вручную — скрипт запустит новый без повышения прав.")
     if pl and WIN and not a.bez_ochistki:
         if ochistit(pl.modul, pl.izdatel, pechat=lambda s: None):
             print(f"кэш {pl.modul} у Simulator сброшен: возьмёт свежую копию из Solar2DPlugins или по ссылке")
     start = time.time()
     if WIN:
-        # Через ShellExecute, как Start-Process: CreateProcess (subprocess) получает отказ
-        # «требуется повышение» — манифест Simulator не рассчитан на запуск им
-        os.startfile(simulyator()[0], arguments=f'"{main_lua}"')
+        zapustit_bez_povysheniya(simulyator()[0], main_lua)
     else:
         subprocess.Popen(simulyator(a.arch) + [str(main_lua)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     print(f"Simulator{f' ({a.arch})' if a.arch else ''}: {main_lua}")
