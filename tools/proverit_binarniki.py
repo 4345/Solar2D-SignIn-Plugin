@@ -8,7 +8,8 @@
     win32       DLL 32-битная (Simulator под Windows — i386) и экспортирует luaopen_plugin_<имя>
     android     в AAR все четыре ABI; каждая .so зависит от liblua.so и libcorona.so (иначе на
                 Android 6+ «cannot locate symbol»), экспортирует luaopen_… и JNI-вход LuaLoader;
-                в classes.jar есть plugin/<имя>/LuaLoader.class
+                в classes.jar есть plugin/<имя>/LuaLoader.class. Плагин на чистой Java
+                ("java": true в plagin.json) — .so в AAR НЕ должно быть, нужен только класс
     iphone      срез arm64 содержит _luaopen_…; metadata.lua называет библиотеку в staticLibs
     iphone-sim  ОБА среза, arm64 и x86_64, содержат _luaopen_… (заголовок lipo этого не доказывает)
     macOS       оба среза экспортируют _luaopen_…, есть подпись (LC_CODE_SIGNATURE)
@@ -89,13 +90,18 @@ def check_aar(pl: Plagin, data: bytes) -> None:
         names = aar.namelist()
         sos = [n for n in names if n.startswith("jni/") and n.endswith("/lib" + pl.osnova + ".so")]
         abis = sorted(n.split("/")[1] for n in sos)
-        report(abis == ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"], f"AAR: ABI {abis}")
+        if pl.java:
+            report(abis == [], f"AAR: плагин на Java, .so нет (ABI {abis})")
+        else:
+            report(abis == ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"], f"AAR: ABI {abis}")
         lishnie = [n for n in names if n.endswith(("/liblua.so", "/libcorona.so"))]
         report(not lishnie, "в AAR нет копий liblua.so / libcorona.so (они в приложении из Corona.aar)")
         if "classes.jar" in names:
             with zipfile.ZipFile(io.BytesIO(aar.read("classes.jar"))) as jar:
                 loader = f"plugin/{pl.imya}/LuaLoader.class"
                 report(loader in jar.namelist(), f"classes.jar: {loader}")
+        elif pl.java:
+            report(False, "в AAR нет classes.jar — у плагина на Java больше ничего нет")
         with tempfile.TemporaryDirectory() as tmp:
             for n in sos:
                 so = Path(tmp) / n.replace("/", "_")
