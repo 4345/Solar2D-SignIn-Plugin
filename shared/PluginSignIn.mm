@@ -168,7 +168,7 @@ static NSString* Stroka(id znachenie)
 
 @interface PluginSignInVhod : NSObject <ASAuthorizationControllerPresentationContextProviding, ASWebAuthenticationPresentationContextProviding>
 @property (nonatomic, assign) lua_State* L;
-@property (nonatomic, assign) int slushatel; // ссылка CoronaLuaNewRef
+@property (nonatomic, assign) CoronaLuaRef slushatel; // ссылка CoronaLuaNewRef
 @property (nonatomic, copy) NSString* provayder;
 - (void)otdatOshibku:(NSString*)tip tekst:(NSString*)tekst;
 - (void)otdatUspeh:(NSDictionary<NSString*, NSString*>*)polya;
@@ -209,7 +209,7 @@ static PluginSignInVhod* g_Idyot = nil;
 			lua_setfield(L, -2, [pole UTF8String]);
 		}
 	}
-	int slushatel = self.slushatel;
+	CoronaLuaRef slushatel = self.slushatel;
 	self.slushatel = 0;
 	CoronaLuaDispatchEvent(L, slushatel, 0);
 	CoronaLuaDeleteRef(L, slushatel);
@@ -566,7 +566,7 @@ static int l_signOut(lua_State* L)
 		if (!EtoSlushatel(L, 1)) {
 			return luaL_error(L, "signin.signOut: listener must be a function or a table");
 		}
-		int ssylka = CoronaLuaNewRef(L, 1);
+		CoronaLuaRef ssylka = CoronaLuaNewRef(L, 1);
 		lua_State* sostoyanie = L;
 		dispatch_async(dispatch_get_main_queue(), ^{
 			if (sostoyanie != g_L) {
