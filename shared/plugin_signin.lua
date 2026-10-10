@@ -7,13 +7,17 @@
 -- Аргументы проверяются так же, как в нативной части, — ошибка программиста
 -- видна уже в Simulator, а не только на телефоне.
 --
+-- На iOS (с 1.2.0) этот же код — основа таблицы библиотеки: его байт-код
+-- (plugin_signin.c) вшит в библиотеку, а нативная часть (PluginSignIn.mm)
+-- ставит поверх свои version, isAvailable, apple, google и signOut.
+--
 -- ----------------------------------------------------------------------------
 
 local Library = require "CoronaLibrary"
 
 local lib = Library:new{ name = 'plugin.signin', publisherId = 'ovh.azi' }
 
-local VERSION = "1.1.0"
+local VERSION = "1.2.0"
 
 local function etoSlushatel( listener )
 	local t = type( listener )

@@ -17,6 +17,30 @@
         "644"
       ]
     ],
+    "iphone": [
+      [
+        "libplugin_signin.a",
+        "ios/BuiltPlugin/iphone/libplugin_signin.a",
+        "644"
+      ],
+      [
+        "metadata.lua",
+        "ios/BuiltPlugin/iphone/metadata.lua",
+        "644"
+      ]
+    ],
+    "iphone-sim": [
+      [
+        "libplugin_signin.a",
+        "ios/BuiltPlugin/iphone-sim/libplugin_signin.a",
+        "644"
+      ],
+      [
+        "metadata.lua",
+        "ios/BuiltPlugin/iphone-sim/metadata.lua",
+        "644"
+      ]
+    ],
     "win32": [
       [
         "plugin_signin.lua",
