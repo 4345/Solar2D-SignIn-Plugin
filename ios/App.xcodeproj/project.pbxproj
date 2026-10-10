@@ -561,6 +561,10 @@
 				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = (
 					"$(inherited)",
 					"\"$(PROJECT_DIR)/BuiltPlugin/iphone-sim/libplugin_signin.a\"",
+					"-framework",
+					AuthenticationServices,
+					"-framework",
+					Security,
 				);
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.mycompany.${PRODUCT_NAME:rfc1034identifier}";
@@ -587,6 +591,10 @@
 				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = (
 					"$(inherited)",
 					"\"$(PROJECT_DIR)/BuiltPlugin/iphone-sim/libplugin_signin.a\"",
+					"-framework",
+					AuthenticationServices,
+					"-framework",
+					Security,
 				);
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.mycompany.${PRODUCT_NAME:rfc1034identifier}";
