@@ -85,15 +85,17 @@ say( "=== Тест plugin.signin ===" )
 -- [1] Загрузка
 say( "[1] Загрузка" )
 check( type( plagin ) == "table", "require вернул таблицу" )
--- Android-часть с 1.1.0 не менялась; iOS и Lua-заглушка — 1.2.0
-local VERSIYA = estAndroid and "1.1.0" or "1.2.0"
+-- Android-часть с 1.1.0 не менялась; iOS — 1.2.0; компьютер (вход Google через
+-- браузер, desktop/plugin_signin.lua) — 1.3.0
+local VERSIYA = estAndroid and "1.1.0" or estIOS and "1.2.0" or "1.3.0"
 check( type( plagin.version ) == "function" and plagin.version() == VERSIYA,
 	"version() = " .. tostring( plagin.version and plagin.version() ) .. ", ждали " .. VERSIYA )
 local dostupno = plagin.isAvailable()
 check( type( dostupno ) == "table" and type( dostupno.google ) == "boolean" and type( dostupno.apple ) == "boolean",
 	"isAvailable() — таблица с google и apple" )
-check( dostupno.google == estNativnaya,
-	"google доступен ровно там, где есть нативная часть (" .. tostring( dostupno.google ) .. ")" )
+-- Google есть везде, где тест запускается: на телефоне — нативная часть, на
+-- компьютере (Simulator) — вход через браузер (с 1.3.0)
+check( dostupno.google == true, "google доступен (" .. tostring( dostupno.google ) .. ")" )
 check( dostupno.apple == estIOS,
 	"apple доступен ровно на iOS (" .. tostring( dostupno.apple ) .. ")" )
 
@@ -193,12 +195,133 @@ if estIOS then
 end
 
 if not estNativnaya then
-	-- Lua-заглушка (Simulator, настольные приложения): вход недоступен, и это
-	-- честно сказано, а не изображено.
-	say( "[3] Без нативной части" )
+	-- Компьютер (Simulator, настольные приложения): вход Google через браузер и
+	-- ответ на локальный адрес. Браузер тест не открывает — system.openURL
+	-- подменён, адрес входа перехвачен; «ответ браузера» тест шлёт на локальный
+	-- порт сам. Настоящий вход (аккаунт Google в браузере) — только руками.
+	say( "[3] Компьютер: аргументы" )
 	local r, e = plagin.google( { serverClientId = CHUZHOY_KLIENT }, function() end )
-	check( r == nil and e == "unsupported", "google() -> nil, " .. tostring( e ) )
-	finish()
+	check( r == nil and e == "desktopClientId is required", "без desktopClientId -> nil, " .. tostring( e ) )
+	local r2, e2 = plagin.google( { desktopClientId = "не-номер-клиента" }, function() end )
+	check( r2 == nil and e2 == "desktopClientId is required", "чужой вид desktopClientId -> nil, " .. tostring( e2 ) )
+	local r3, e3 = plagin.google( { desktopClientId = CHUZHOY_KLIENT, silent = true }, function() end )
+	check( r3 == nil and e3 == "unsupported", "google { silent } -> nil, " .. tostring( e3 ) )
+	check( not pcall( plagin.google, { desktopClientId = CHUZHOY_KLIENT }, 42 ), "google: слушатель-число отвергнут ошибкой" )
+
+	local socket = require( "socket" )
+	local sobytiya = {}
+	local adres
+
+	-- Вход с перехваченным браузером; вернёт порт и state из адреса входа
+	local function nachat( dop )
+		adres = nil
+		local opts = { desktopClientId = CHUZHOY_KLIENT, doneText = "Вход выполнен <проверка>" }
+		for k, v in pairs( dop or {} ) do opts[ k ] = v end
+		local nastoyashchiy = system.openURL
+		system.openURL = function( u ) adres = u; return true end
+		local ok = plagin.google( opts, function( ev ) sobytiya[ #sobytiya + 1 ] = ev end )
+		system.openURL = nastoyashchiy
+		local p = {}
+		for k, v in ( adres or "" ):gmatch( "([%w_]+)=([^&]*)" ) do p[ k ] = v end
+		local port = tonumber( ( p.redirect_uri or "" ):match( "127%.0%.0%.1%%3A(%d+)$" ) )
+		return ok, p, port
+	end
+
+	-- «Браузер»: один запрос на локальный порт, ответ читается без блокировки
+	-- (вход опрашивает порт таймером — блокирующее чтение здесь его бы остановило)
+	local function brauzer( port, put, gotovo )
+		local c = socket.tcp()
+		c:settimeout( 2 )
+		local ok = c:connect( "127.0.0.1", port )
+		if not ok then return gotovo( nil ) end
+		c:send( "GET " .. put .. " HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n" )
+		c:settimeout( 0 )
+		local kuski = {}
+		local nachalo = system.getTimer()
+		local t
+		t = timer.performWithDelay( 20, function()
+			local dannye, err, chast = c:receive( "*a" )
+			local kusok = dannye or chast
+			if kusok and #kusok > 0 then kuski[ #kuski + 1 ] = kusok end
+			if err == "closed" or dannye or system.getTimer() - nachalo > 5000 then
+				timer.cancel( t )
+				c:close()
+				gotovo( table.concat( kuski ) )
+			end
+		end, 0 )
+	end
+
+	say( "[4] Компьютер: адрес входа" )
+	local ok, p, port = nachat( { button = true } )
+	check( ok == true, "запрос принят" )
+	check( adres and adres:find( "^https://accounts%.google%.com/o/oauth2/v2/auth%?" ) ~= nil, "открыт адрес входа Google" )
+	check( p.client_id == CHUZHOY_KLIENT:gsub( "%-", "%%2D" ) or p.client_id == CHUZHOY_KLIENT, "client_id — клиент «Desktop app»" )
+	check( port ~= nil, "возврат — http://127.0.0.1:<порт> (" .. tostring( port ) .. ")" )
+	check( p.code_challenge_method == "S256" and #( p.code_challenge or "" ) == 43, "PKCE S256, вызов 43 знака" )
+	check( #( p.state or "" ) == 24 and p.prompt == "select_account" and p.response_type == "code", "state, prompt, response_type" )
+	local b, bErr = plagin.google( { desktopClientId = CHUZHOY_KLIENT }, function() end )
+	check( b == nil and bErr == "busy", "второй, пока первый в полёте, -> nil, " .. tostring( bErr ) )
+
+	brauzer( port, "/favicon.ico", function( otvet1 )
+		check( otvet1 and otvet1:find( "^HTTP/1%.1 404" ) ~= nil, "не ответ входа (значок сайта) -> 404, вход ждёт дальше" )
+		brauzer( port, "/?state=chuzhoy&code=x", function( otvet2 )
+			check( otvet2 and otvet2:find( "^HTTP/1%.1 200" ) ~= nil and otvet2:find( "&lt;проверка&gt;", 1, true ) ~= nil,
+				"браузер получает страницу с doneText (текст экранирован)" )
+			waitFor( "событие при чужом state", function() return #sobytiya >= 1 end, 3000, function()
+				local ev = sobytiya[ 1 ]
+				check( ev.name == "signin" and ev.provider == "google" and ev.isError == true and ev.errorType == "failed"
+					and ev.errorMessage == "state mismatch", "чужой state -> failed, state mismatch (" .. tostring( ev.errorMessage ) .. ")" )
+
+				say( "[5] Компьютер: отказ в браузере" )
+				local ok2, p2, port2 = nachat()
+				check( ok2 == true and port2 ~= nil, "после итога вход снова принимается" )
+				brauzer( port2, "/?error=access_denied&state=" .. tostring( p2.state ), function()
+					waitFor( "событие отказа", function() return #sobytiya >= 2 end, 3000, function()
+						check( sobytiya[ 2 ].isError and sobytiya[ 2 ].errorType == "cancelled", "access_denied -> cancelled" )
+
+						say( "[6] Компьютер: обмен кода у Google" )
+						local ok3, p3, port3 = nachat()
+						check( ok3 == true and port3 ~= nil, "вход принят" )
+						brauzer( port3, "/?code=nevernyy-kod&scope=openid&state=" .. tostring( p3.state ), function()
+							waitFor( "ответ Google на обмен кода", function() return #sobytiya >= 3 end, 20000, function()
+								local ev3 = sobytiya[ 3 ]
+								say( "     событие: errorType=" .. tostring( ev3.errorType ) .. " errorMessage=" .. tostring( ev3.errorMessage ) )
+								check( ev3.isError == true and ev3.idToken == nil and ev3.errorType == "failed"
+									and tostring( ev3.errorMessage ):find( "^token request %d%d%d" ) ~= nil,
+									"неверный код у настоящего Google -> failed с ответом token request" )
+
+								say( "[6а] Компьютер: код для сервера (serverAuthCode)" )
+								local ok4, p4, port4 = nachat( { serverAuthCode = true } )
+								check( ok4 == true and port4 ~= nil, "вход принят" )
+								brauzer( port4, "/?code=4%2Fkod&state=" .. tostring( p4.state ), function()
+								waitFor( "событие с кодом", function() return #sobytiya >= 4 end, 3000, function()
+								local ev4 = sobytiya[ 4 ]
+								check( ev4.isError == false and ev4.idToken == nil and ev4.serverAuthCode == "4/kod"
+									and #( ev4.codeVerifier or "" ) == 64 and ( ev4.redirectUri or "" ):find( "^http://127%.0%.0%.1:%d+$" ) ~= nil,
+									"код, PKCE-ключ и адрес возврата — серверу, без обмена (" .. tostring( ev4.serverAuthCode ) .. ")" )
+
+								say( "[7] Выход" )
+								local vyhod = {}
+								check( plagin.signOut( { signin = function( self, event ) vyhod[ #vyhod + 1 ] = event end } ) == true,
+									"signOut принят (слушатель-таблица)" )
+								check( #vyhod == 0, "событие выхода не синхронное" )
+								waitFor( "событие выхода", function() return #vyhod > 0 end, 5000, function()
+									check( vyhod[ 1 ].name == "signin" and vyhod[ 1 ].isSignOut == true and vyhod[ 1 ].isError == false,
+										"выход: событие signin, isSignOut, без ошибки" )
+									timer.performWithDelay( 200, function()
+										check( #sobytiya == 4, "событий входа ровно четыре (" .. #sobytiya .. ")" )
+										finish()
+									end )
+								end )
+								end )
+								end )
+							end )
+						end )
+					end )
+				end )
+			end )
+		end )
+	end )
 	return
 end
 

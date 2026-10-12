@@ -45,7 +45,7 @@ settings =
 		["plugin.signin"] =
 		{
 			publisherId = "ovh.azi",
-			supportedPlatforms = { win32 = true, android = true, iphone = true, macos = true }
+			supportedPlatforms = { win32 = true, ["win32-sim"] = true, android = true, iphone = true, macos = true, ["mac-sim"] = true }
 		},
 	},
 

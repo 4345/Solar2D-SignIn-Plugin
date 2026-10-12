@@ -9,7 +9,7 @@
 | :--- | :--- |
 | **Android** | вход через Google ([Credential Manager](https://developer.android.com/identity/sign-in/credential-manager-siwg)): окно выбора аккаунта, тихий повторный вход, выход |
 | **iOS** (с 1.2.0) | «Вход с Apple» ([AuthenticationServices](https://developer.apple.com/documentation/authenticationservices)) и вход через Google (OAuth 2.0 с PKCE в системном окне `ASWebAuthenticationSession`, без SDK Google) |
-| Simulator (Windows, macOS), настольные приложения | заглушка на Lua: вход недоступен, и это сказано явно (`isAvailable()` — `false`) |
+| Simulator (Windows, macOS), настольные приложения (с 1.3.0) | вход через Google в браузере компьютера: OAuth 2.0 для настольных приложений, ответ на `http://127.0.0.1:<порт>`, PKCE (S256). Нужен клиент OAuth типа «Desktop app»; код на токен меняет ваш сервер (`serverAuthCode`) — у такого клиента Google требует секрет, и в приложении ему не место. Вход с Apple — нет |
 
 ---
 
@@ -57,7 +57,7 @@ settings =
 				android = { url = "https://raw.githubusercontent.com/4345/Solar2D-SignIn-Plugin/main/plugins/android/data.tgz" },
 				iphone = { url = "https://raw.githubusercontent.com/4345/Solar2D-SignIn-Plugin/main/plugins/iphone/data.tgz" },
 				["iphone-sim"] = { url = "https://raw.githubusercontent.com/4345/Solar2D-SignIn-Plugin/main/plugins/iphone-sim/data.tgz" },
-				-- Заглушка: Simulator и настольные приложения
+				-- Компьютер: Simulator и настольные приложения (вход Google через браузер, с 1.3.0)
 				["win32-sim"] = { url = "https://raw.githubusercontent.com/4345/Solar2D-SignIn-Plugin/main/plugins/win32-sim/data.tgz" },
 				["mac-sim"] = { url = "https://raw.githubusercontent.com/4345/Solar2D-SignIn-Plugin/main/plugins/mac-sim/data.tgz" },
 				win32 = { url = "https://raw.githubusercontent.com/4345/Solar2D-SignIn-Plugin/main/plugins/win32/data.tgz" },
@@ -150,10 +150,23 @@ end
 | `signin.version()` | строка версии |
 | `signin.isAvailable()` | `{ google = логическое, apple = логическое }` |
 | `signin.google( options, listener )` | `true` — запрос принят; `nil, сообщение` — нет |
-| `signin.apple( options, listener )` | iOS — как `google`; на Android и заглушке — `nil, "unsupported"` |
+| `signin.apple( options, listener )` | iOS — как `google`; на Android и компьютере — `nil, "unsupported"` |
 | `signin.signOut( [listener] )` | `true` — сброс принят (на iOS забывать нечего — только событие) |
 
-`options` для `google`:
+`options` для `google` на компьютере (Simulator, настольные приложения, с 1.3.0):
+
+| поле | что |
+| :--- | :--- |
+| `desktopClientId` | строка, обязательно — клиент OAuth типа «Desktop app» того же проекта Google Cloud: учётная запись (`sub`) та же, что с телефона |
+| `serverAuthCode = true` | не менять код, а отдать его: событие несёт `serverAuthCode`, `codeVerifier` и `redirectUri` вместо `idToken` — сервер шлёт их с секретом клиента в `https://oauth2.googleapis.com/token` (`grant_type=authorization_code`) и получает ID-токен |
+| `desktopClientSecret` | секрет клиента — если код меняет сам плагин (без `serverAuthCode`); Google без него отвечает `client_secret is missing` |
+| `button = true` | выбор аккаунта каждый раз (`prompt=select_account`) |
+| `doneText` | текст страницы в браузере после входа |
+| `silent = true` | `nil, "unsupported"`: без окна браузера входа нет |
+
+Браузер открывается системный (`system.openURL`); ответа нет 5 минут — событие `cancelled`.
+
+`options` для `google` на телефоне:
 
 | поле | что |
 | :--- | :--- |
@@ -231,9 +244,10 @@ python tools/sobrat_arhivy.py               # plugins/<платформа>/data.
 python tools/sobrat_arhivy.py --proverit    # архивы совпадают со сборкой
 ```
 
-Заглушка для Simulator и настольных платформ — `shared/plugin_signin.lua`, упаковывается тем же
-`sobrat_arhivy.py`. Правили её — `python tools/obnovit_baitkod_lua.py`: на iOS она вшита в
-библиотеку байт-кодом (`shared/plugin_signin.c`) как основа таблицы.
+Компьютер (win32, win32-sim, macOS, mac-sim) — `desktop/plugin_signin.lua`, упаковывается тем же
+`sobrat_arhivy.py`. Заглушка `shared/plugin_signin.lua` (архив lua) — основа таблицы на iOS: она
+вшита в библиотеку байт-кодом (`shared/plugin_signin.c`); правили её —
+`python tools/obnovit_baitkod_lua.py`.
 
 iOS — только на macOS (Xcode, Corona Native):
 
@@ -249,7 +263,8 @@ python3 tools/sobrat_arhivy.py iphone iphone-sim
 | что | как | проверок |
 | :--- | :--- | :--- |
 | Android на устройстве | `python tools/zapusk_android.py` (телефон по adb) | 20: загрузка, аргументы, тихий вход до ответа Google и событие в Lua, `busy`, повторный вход, слушатель-таблица, выход |
-| заглушка в Simulator | `python tools/zapusk_simulyatora.py` | 13 |
+| компьютер без Simulator | `python tools/proverka_kompyuter.py` (lupa: настоящий `desktop/plugin_signin.lua`, настоящие сокеты, обмен кода у настоящего Google) | 24 |
+| компьютер в Simulator | `python tools/zapusk_simulyatora.py` (закрывает открытый Simulator) | адрес входа и PKCE, ответы на локальный порт (чужой запрос, чужой `state`, отказ), обмен у Google, `serverAuthCode`, `busy`, выход |
 | iOS (симулятор iOS, iPhone) | `ios/App.xcodeproj` | загрузка, аргументы обоих входов, вход с Apple до события в Lua, общая очередь `busy`, выход. Окно Google тест не открывает — его проверяют в приложении руками |
 
 Тестовое приложение не заведено ни у одного клиента OAuth, поэтому тихий вход в нём законно
@@ -264,7 +279,8 @@ python3 tools/sobrat_arhivy.py iphone iphone-sim
 android/plugin/      Java-часть: plugin/signin/LuaLoader.java, build.gradle
 android/corona.gradle  зависимости для приложения (уходит в архив android)
 android/app/         тестовое приложение (шаблон Corona Native)
-shared/plugin_signin.lua  заглушка для платформ без нативной части (и основа таблицы на iOS)
+desktop/plugin_signin.lua компьютер: вход Google через браузер (архивы win32, win32-sim, macOS, mac-sim)
+shared/plugin_signin.lua  заглушка (архив lua) и основа таблицы на iOS
 shared/PluginSignIn.mm    iOS: вход с Apple и через Google
 shared/plugin_signin.c    байт-код заглушки для iOS (tools/obnovit_baitkod_lua.py)
 test/                тестовый проект Solar2D

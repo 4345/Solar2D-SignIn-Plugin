@@ -44,28 +44,28 @@
     "win32": [
       [
         "plugin_signin.lua",
-        "shared/plugin_signin.lua",
+        "desktop/plugin_signin.lua",
         "644"
       ]
     ],
     "win32-sim": [
       [
         "plugin_signin.lua",
-        "shared/plugin_signin.lua",
+        "desktop/plugin_signin.lua",
         "644"
       ]
     ],
     "macOS": [
       [
         "plugin_signin.lua",
-        "shared/plugin_signin.lua",
+        "desktop/plugin_signin.lua",
         "644"
       ]
     ],
     "mac-sim": [
       [
         "plugin_signin.lua",
-        "shared/plugin_signin.lua",
+        "desktop/plugin_signin.lua",
         "644"
       ]
     ],
